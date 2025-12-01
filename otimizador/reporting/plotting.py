@@ -1,170 +1,235 @@
 # ARQUIVO: otimizador/reporting/plotting.py
 
-import os
-from collections import defaultdict
-from typing import List, Dict, Tuple
 import matplotlib.pyplot as plt
-import numpy as np
+import matplotlib.patches as mpatches
+from collections import defaultdict
 import pandas as pd
+from typing import List, Dict, Tuple
 
 # Import relativo
 from ..data_models import Turma
-from ..utils import calcular_meses_ativos
 
 
 def gerar_grafico_turmas_projeto_mes(turmas: List[Turma], meses: List[str], meses_ferias: List[int]) -> str:
-    """Gráfico 1: Demanda Consolidada por Projeto ao Longo do Tempo."""
-    if not turmas: return ""
-    print("\n--- Gerando Gráfico: Demanda Consolidada por Projeto...")
-    num_meses = len(meses)
-    projetos_unicos = sorted(list(set(t.projeto for t in turmas)))
-    cor_map = {proj: plt.colormaps.get_cmap('tab20c')(i) for i, proj in enumerate(projetos_unicos)}
+    """Gera gráfico de turmas ativas por projeto e mês."""
+    from ..utils import calcular_meses_ativos
 
-    dados_projeto_mes = {proj: [0] * num_meses for proj in projetos_unicos}
+    projetos = sorted(list(set(t.projeto for t in turmas)))
+    dados = {proj: [0] * len(meses) for proj in projetos}
+
     for t in turmas:
-        for m in calcular_meses_ativos(t.mes_inicio, t.duracao, meses_ferias, num_meses):
-            dados_projeto_mes[t.projeto][m] += 1
+        meses_ativos = calcular_meses_ativos(t.mes_inicio, t.duracao, meses_ferias, len(meses))
+        for m in meses_ativos:
+            dados[t.projeto][m] += 1
 
-    fig, ax = plt.subplots(figsize=(22, 8))
-    bottom = np.zeros(num_meses)
-    for proj in projetos_unicos:
-        ax.bar(meses, dados_projeto_mes[proj], bottom=bottom, label=proj, color=cor_map.get(proj), edgecolor='black',
-               linewidth=0.5)
-        bottom += np.array(dados_projeto_mes[proj])
+    fig, ax = plt.subplots(figsize=(16, 8))
+    bottom = [0] * len(meses)
 
-    for m_idx in meses_ferias: ax.axvspan(m_idx - 0.5, m_idx + 0.5, color='gray', alpha=0.2, zorder=0,
-                                          label='Férias' if m_idx == meses_ferias[0] else '')
+    for proj in projetos:
+        ax.bar(meses, dados[proj], bottom=bottom, label=proj, alpha=0.8)
+        bottom = [bottom[i] + dados[proj][i] for i in range(len(meses))]
 
+    for mes_idx in meses_ferias:
+        if mes_idx < len(meses):
+            ax.axvspan(mes_idx - 0.5, mes_idx + 0.5, color='red', alpha=0.1, zorder=0)
+
+    ax.set_title('Demanda de Turmas por Projeto ao Longo do Tempo', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('Mês', fontsize=12, fontweight='bold')
     ax.set_ylabel('Número de Turmas Ativas', fontsize=12, fontweight='bold')
-    ax.set_xlabel('Meses', fontsize=12, fontweight='bold')
-    ax.set_title('Demanda Consolidada por Projeto ao Longo do Tempo', fontsize=16, fontweight='bold', pad=20)
-    ax.legend(title='Projetos', loc='upper left')
-    plt.xticks(rotation=45, ha="right")
-    ax.grid(axis='y', linestyle='--', alpha=0.5)
+    ax.legend(loc='upper left', framealpha=0.9)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-    filepath = 'grafico_1_demanda_projeto_tempo.png'
-    plt.savefig(filepath, dpi=300)
-    plt.close(fig)
+
+    filepath = 'grafico_turmas_projeto_mes.png'
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"[✓] Gráfico de turmas por projeto/mês gerado: {filepath}")
     return filepath
 
 
 def gerar_grafico_turmas_instrutor_tipologia_projeto(atribuicoes: List[Dict]) -> str:
-    """Gráfico 2: Alocação Detalhada - Instrutor vs. Projeto."""
-    if not atribuicoes: return ""
-    print("--- Gerando Gráfico: Alocação Detalhada por Instrutor...")
+    """Gera gráfico de turmas por instrutor, habilidade e projeto."""
+    dados = defaultdict(lambda: defaultdict(int))
 
-    dados_consolidados = defaultdict(lambda: defaultdict(int))
-    instrutores_por_habilidade = defaultdict(list)
     for atr in atribuicoes:
         instrutor_id = atr['instrutor'].id
         projeto = atr['turma'].projeto
-        habilidade = atr['instrutor'].habilidade
-        dados_consolidados[instrutor_id][projeto] += 1
-        if instrutor_id not in instrutores_por_habilidade[habilidade]:
-            instrutores_por_habilidade[habilidade].append(instrutor_id)
+        dados[instrutor_id][projeto] += 1
 
-    projetos_unicos = sorted(list(set(p for inst_data in dados_consolidados.values() for p in inst_data.keys())))
-    habilidades = sorted(instrutores_por_habilidade.keys())
-    fig, axes = plt.subplots(len(habilidades), 1, figsize=(20, 8 * len(habilidades)), squeeze=False)
-    cor_map = plt.colormaps.get_cmap('Pastel1')
+    instrutores = sorted(dados.keys(), key=lambda x: (x.split('_')[0], int(x.split('_')[1])))
+    projetos = sorted(list(set(proj for inst_data in dados.values() for proj in inst_data.keys())))
 
-    for ax_idx, habilidade in enumerate(habilidades):
-        ax = axes[ax_idx, 0]
-        instrutores_hab = sorted(instrutores_por_habilidade[habilidade], key=lambda x: int(x.split('_')[-1]))
-        if not instrutores_hab: continue
+    fig, ax = plt.subplots(figsize=(16, 10))
+    bar_width = 0.8
+    bottom = [0] * len(instrutores)
 
-        df = pd.DataFrame(0, index=instrutores_hab, columns=projetos_unicos)
-        for inst in instrutores_hab:
-            for proj, count in dados_consolidados[inst].items():
-                df.loc[inst, proj] = count
+    for proj in projetos:
+        valores = [dados[inst].get(proj, 0) for inst in instrutores]
+        ax.barh(instrutores, valores, bar_width, left=bottom, label=proj, alpha=0.85)
+        bottom = [bottom[i] + valores[i] for i in range(len(instrutores))]
 
-        df.plot(kind='bar', stacked=True, ax=ax, colormap=cor_map, edgecolor='black')
-
-        ax.set_ylabel('Número de Turmas', fontsize=11, fontweight='bold')
-        ax.set_xlabel(None)
-        ax.set_title(f'Alocação de Turmas por Instrutor - {habilidade}', fontsize=14, fontweight='bold')
-        ax.tick_params(axis='x', rotation=45)
-        ax.legend(title='Projetos', bbox_to_anchor=(1.01, 1), loc='upper left')
-        ax.grid(axis='y', linestyle='--', alpha=0.5)
+    ax.set_title('Distribuição de Turmas por Instrutor e Projeto', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('Número de Turmas', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Instrutor', fontsize=12, fontweight='bold')
+    ax.legend(loc='upper right', framealpha=0.9)
+    ax.grid(True, alpha=0.3, axis='x')
 
     plt.tight_layout()
-    filepath = 'grafico_2_alocacao_detalhada.png'
-    plt.savefig(filepath, dpi=300)
-    plt.close(fig)
+
+    filepath = 'grafico_turmas_instrutor_projeto.png'
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"[✓] Gráfico de turmas por instrutor/projeto gerado: {filepath}")
+    return filepath
+
+
+def gerar_grafico_carga_por_instrutor(atribuicoes: List[Dict]) -> str:
+    """Gera gráfico de carga total por instrutor."""
+    carga_por_instrutor = defaultdict(int)
+
+    for atr in atribuicoes:
+        carga_por_instrutor[atr['instrutor'].id] += 1
+
+    instrutores = sorted(carga_por_instrutor.keys(), key=lambda x: (x.split('_')[0], int(x.split('_')[1])))
+    cargas = [carga_por_instrutor[i] for i in instrutores]
+
+    cores = ['#2ecc71' if inst.startswith('PROG') else '#e74c3c' for inst in instrutores]
+
+    fig, ax = plt.subplots(figsize=(16, 8))
+    bars = ax.bar(instrutores, cargas, color=cores, alpha=0.8, edgecolor='black', linewidth=0.5)
+
+    if cargas:
+        spread = max(cargas) - min(cargas)
+        ax.axhline(y=max(cargas), color='red', linestyle='--', linewidth=2, label=f'Máximo: {max(cargas)}')
+        ax.axhline(y=min(cargas), color='blue', linestyle='--', linewidth=2, label=f'Mínimo: {min(cargas)}')
+        ax.text(0.02, 0.98, f'Spread: {spread} turmas', transform=ax.transAxes, fontsize=14, fontweight='bold',
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    ax.set_title('Carga Total por Instrutor (Balanceamento)', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('Instrutor', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Número de Turmas', fontsize=12, fontweight='bold')
+
+    legend_prog = mpatches.Patch(color='#2ecc71', label='Programação', alpha=0.8)
+    legend_rob = mpatches.Patch(color='#e74c3c', label='Robótica', alpha=0.8)
+    handles, labels = ax.get_legend_handles_labels()
+    handles.extend([legend_prog, legend_rob])
+    ax.legend(handles=handles, loc='upper left', framealpha=0.9)
+
+    ax.grid(True, alpha=0.3, axis='y')
+    plt.xticks(rotation=90, ha='right')
+    plt.tight_layout()
+
+    filepath = 'grafico_carga_instrutor.png'
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"[✓] Gráfico de carga por instrutor gerado: {filepath}")
     return filepath
 
 
 def gerar_grafico_demanda_prog_rob(turmas: List[Turma], meses: List[str], meses_ferias: List[int]) -> Tuple[
     str, pd.DataFrame]:
-    """Gráfico 3: Demanda Mensal por Habilidade (PROG vs ROB)."""
-    if not turmas: return "", pd.DataFrame()
-    print("--- Gerando Gráfico: Demanda Mensal por Habilidade...")
-    num_meses = len(meses)
-    demanda_prog, demanda_rob = [0] * num_meses, [0] * num_meses
+    """Gera gráfico de demanda mensal por habilidade."""
+    from ..utils import calcular_meses_ativos
+
+    dados_prog = [0] * len(meses)
+    dados_rob = [0] * len(meses)
 
     for t in turmas:
-        for m in calcular_meses_ativos(t.mes_inicio, t.duracao, meses_ferias, num_meses):
+        meses_ativos = calcular_meses_ativos(t.mes_inicio, t.duracao, meses_ferias, len(meses))
+        for m in meses_ativos:
             if t.habilidade == 'PROG':
-                demanda_prog[m] += 1
+                dados_prog[m] += 1
             else:
-                demanda_rob[m] += 1
+                dados_rob[m] += 1
 
-    serie_temporal = pd.DataFrame({'Mês': meses, 'Programação': demanda_prog, 'Robótica': demanda_rob})
-    serie_temporal['Total'] = serie_temporal['Programação'] + serie_temporal['Robótica']
+    fig, ax = plt.subplots(figsize=(16, 8))
 
-    fig, ax = plt.subplots(figsize=(20, 7))
-    x = np.arange(num_meses)
-    ax.bar(x - 0.2, demanda_prog, 0.4, label='Programação (PROG)', color='steelblue', edgecolor='black')
-    ax.bar(x + 0.2, demanda_rob, 0.4, label='Robótica (ROB)', color='coral', edgecolor='black')
+    ax.plot(meses, dados_prog, marker='o', linewidth=2, markersize=8, label='Programação', color='#3498db')
+    ax.plot(meses, dados_rob, marker='s', linewidth=2, markersize=8, label='Robótica', color='#e74c3c')
 
-    for m_idx in meses_ferias: ax.axvspan(m_idx - 0.5, m_idx + 0.5, color='gray', alpha=0.2, zorder=0)
+    for mes_idx in meses_ferias:
+        if mes_idx < len(meses):
+            ax.axvspan(mes_idx - 0.5, mes_idx + 0.5, color='gray', alpha=0.2,
+                       label='Férias' if mes_idx == meses_ferias[0] else "")
 
+    ax.set_title('Demanda Mensal: Programação vs. Robótica', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('Mês', fontsize=12, fontweight='bold')
     ax.set_ylabel('Número de Turmas Ativas', fontsize=12, fontweight='bold')
-    ax.set_title('Demanda Mensal por Habilidade (Programação vs. Robótica)', fontsize=16, fontweight='bold', pad=20)
-    ax.set_xticks(x)
-    ax.set_xticklabels(meses, rotation=45, ha="right")
-    ax.legend(fontsize=11)
-    ax.grid(axis='y', linestyle='--', alpha=0.5)
+    ax.legend(loc='upper left', framealpha=0.9)
+    ax.grid(True, alpha=0.3)
+
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-    filepath = 'grafico_3_demanda_habilidade.png'
-    plt.savefig(filepath, dpi=300)
-    plt.close(fig)
-    return filepath, serie_temporal
+
+    filepath = 'grafico_demanda_prog_rob.png'
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    df = pd.DataFrame({'Mês': meses, 'Programação': dados_prog, 'Robótica': dados_rob,
+                       'Total': [dados_prog[i] + dados_rob[i] for i in range(len(meses))]})
+
+    print(f"[✓] Gráfico de demanda PROG/ROB gerado: {filepath}")
+    return filepath, df
 
 
-def gerar_grafico_carga_por_instrutor(atribuicoes: List[Dict]) -> str:
-    """Gráfico 4: Carga Total e Balanceamento por Instrutor (Spread)."""
-    if not atribuicoes: return ""
-    print("--- Gerando Gráfico: Carga Total e Balanceamento (Spread)...")
-    carga = defaultdict(int)
-    for atr in atribuicoes: carga[atr['instrutor'].id] += 1
+def gerar_grafico_fluxo_caixa(fluxo_caixa: Dict[str, Dict[str, float]],
+                              meses: List[str]) -> str:
+    """
+    Gera gráfico de área empilhada do fluxo de caixa por projeto.
+    """
+    print("\n--- Gerando Gráfico de Fluxo de Caixa ---")
 
-    if not carga: return ""
-    cargas = sorted(carga.items(), key=lambda x: (x[0].split('_')[0], int(x[0].split('_')[-1])))
-    instrutores, valores = zip(*cargas)
+    # Preparar dados
+    projetos = sorted(fluxo_caixa.keys())
+    dados_grafico = []
 
-    fig, ax = plt.subplots(figsize=(20, 8))
-    cores = ['steelblue' if 'PROG' in i else 'coral' for i in instrutores]
-    barras = ax.bar(instrutores, valores, color=cores, edgecolor='black')
+    for projeto in projetos:
+        custos_mensais = []
+        for mes in meses:
+            custo = fluxo_caixa[projeto].get(mes, 0.0)
+            custos_mensais.append(custo)
+        dados_grafico.append(custos_mensais)
 
-    spread = max(valores) - min(valores)
-    media = np.mean(valores)
-    ax.axhline(y=media, color='green', linestyle='--', label=f'Carga Média: {media:.1f}')
+    # Criar gráfico
+    fig, ax = plt.subplots(figsize=(16, 8))
 
-    ax.set_ylabel('Número Total de Turmas Alocadas', fontsize=12, fontweight='bold')
-    ax.set_title(f'Carga Total por Instrutor e Balanceamento (Spread = {spread})', fontsize=16, fontweight='bold',
-                 pad=20)
-    ax.legend()
-    plt.xticks(rotation=90, fontsize=9)
-    ax.grid(axis='y', linestyle='--', alpha=0.3)
+    # Gráfico de área empilhada
+    ax.stackplot(meses, *dados_grafico, labels=projetos, alpha=0.8)
 
-    from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor='steelblue', edgecolor='black', label='Programação'),
-                       Patch(facecolor='coral', edgecolor='black', label='Robótica')]
-    ax.legend(handles=legend_elements, loc='upper right')
+    # Linha do custo total
+    custo_total_mensal = [sum(dados_grafico[i][j] for i in range(len(projetos)))
+                          for j in range(len(meses))]
+    ax.plot(meses, custo_total_mensal, 'k--', linewidth=2,
+            label='Custo Total', marker='o', markersize=4)
+
+    # Formatação
+    ax.set_title('Fluxo de Caixa Mensal por Projeto', fontsize=16, fontweight='bold', pad=20)
+    ax.set_xlabel('Mês', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Custo (R$)', fontsize=12, fontweight='bold')
+    ax.legend(loc='upper left', framealpha=0.9)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Formatar eixo Y com valores monetários
+    def format_func(value, tick_number):
+        if value >= 1000:
+            return f'R$ {value / 1000:.0f}k'
+        return f'R$ {value:.0f}'
+
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(format_func))
+
+    # Rotacionar labels do eixo X
+    plt.xticks(rotation=45, ha='right')
 
     plt.tight_layout()
-    filepath = 'grafico_4_balanceamento_spread.png'
-    plt.savefig(filepath, dpi=300)
-    plt.close(fig)
+
+    filepath = 'grafico_fluxo_caixa.png'
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"[✓] Gráfico de fluxo de caixa gerado: {filepath}")
     return filepath

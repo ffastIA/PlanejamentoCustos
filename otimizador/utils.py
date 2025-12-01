@@ -98,9 +98,9 @@ def converter_projetos_para_modelo(projetos_config: List[ConfiguracaoProjeto], m
             prog_por_onda, rob_por_onda = prog_total // config.ondas, rob_total // config.ondas
             for onda_idx in range(config.ondas):
                 prog_onda = prog_total - (
-                            prog_por_onda * (config.ondas - 1)) if onda_idx == config.ondas - 1 else prog_por_onda
+                        prog_por_onda * (config.ondas - 1)) if onda_idx == config.ondas - 1 else prog_por_onda
                 rob_onda = rob_total - (
-                            rob_por_onda * (config.ondas - 1)) if onda_idx == config.ondas - 1 else rob_por_onda
+                        rob_por_onda * (config.ondas - 1)) if onda_idx == config.ondas - 1 else rob_por_onda
                 nome_onda = f"{config.nome}_Onda{onda_idx + 1}"
                 projetos_modelo.append(
                     Projeto(nome_onda, prog_onda, rob_onda, config.duracao_curso, inicio_min, inicio_max,
@@ -157,3 +157,54 @@ def analisar_distribuicao_instrutores_por_projeto(atribuicoes: List[Dict]) -> Di
         for proj, hab_sets in instrutores_vistos.items()
     }
     return contagem_final
+
+
+def calcular_fluxo_caixa_por_projeto(atribuicoes: List[Dict], meses: List[str],
+                                     meses_ferias: List[int],
+                                     remuneracao_instrutor: float) -> Dict[str, Dict[str, float]]:
+    """
+    Calcula o fluxo de caixa mensal por projeto.
+
+    Retorna:
+        {
+            'NomeProjeto': {
+                'Jan/26': 15000.0,  # Custo neste mês
+                'Fev/26': 20000.0,
+                ...
+            }
+        }
+    """
+    print("\n--- Calculando Fluxo de Caixa por Projeto ---")
+
+    # Estrutura: {projeto: {mes_idx: set_de_instrutores}}
+    instrutores_por_projeto_mes = defaultdict(lambda: defaultdict(set))
+
+    for atr in atribuicoes:
+        turma = atr['turma']
+        instrutor = atr['instrutor']
+        projeto_base = turma.projeto.split('_Onda')[0]
+
+        # Calcula os meses em que esta turma está ativa
+        meses_ativos = calcular_meses_ativos(
+            turma.mes_inicio,
+            turma.duracao,
+            meses_ferias,
+            len(meses)
+        )
+
+        # Para cada mês ativo, registra que este instrutor trabalhou neste projeto
+        for mes_idx in meses_ativos:
+            instrutores_por_projeto_mes[projeto_base][mes_idx].add(instrutor.id)
+
+    # Converte para fluxo de caixa
+    fluxo_caixa = {}
+    for projeto, meses_dict in instrutores_por_projeto_mes.items():
+        fluxo_caixa[projeto] = {}
+        for mes_idx, instrutores_set in meses_dict.items():
+            mes_nome = meses[mes_idx]
+            num_instrutores = len(instrutores_set)
+            custo_mensal = num_instrutores * remuneracao_instrutor
+            fluxo_caixa[projeto][mes_nome] = custo_mensal
+
+    print(f"Fluxo de caixa calculado para {len(fluxo_caixa)} projetos")
+    return fluxo_caixa

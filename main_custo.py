@@ -1,4 +1,4 @@
-# ARQUIVO: main_custo.py
+# ARQUIVO: main.py
 
 import sys
 import os
@@ -6,8 +6,9 @@ from datetime import datetime
 
 # Importações dos módulos
 from otimizador.io import user_input, config_manager
-from otimizador.utils import gerar_lista_meses, converter_projetos_para_modelo, renumerar_instrutores_ativos, \
-    analisar_distribuicao_instrutores_por_projeto
+from otimizador.utils import (gerar_lista_meses, converter_projetos_para_modelo,
+                              renumerar_instrutores_ativos, analisar_distribuicao_instrutores_por_projeto,
+                              calcular_fluxo_caixa_por_projeto)
 from otimizador.core import stage_1, stage_2
 from otimizador.reporting import plotting, spreadsheets, pdf_generator
 
@@ -17,7 +18,7 @@ def main():
     Função principal que executa todo o pipeline de otimização.
     """
     print("\n" + "=" * 80)
-    print("SISTEMA DE OTIMIZAÇÃO DE ALOCAÇÃO DE INSTRUTORES v2.5 (Modular)")
+    print("SISTEMA DE OTIMIZAÇÃO DE ALOCAÇÃO DE INSTRUTORES v2.7 (Fluxo de Caixa)")
     print("=" * 80)
 
     try:
@@ -60,10 +61,19 @@ def main():
 
         distribuicao_por_projeto = analisar_distribuicao_instrutores_por_projeto(resultados_estagio2['atribuicoes'])
 
+        # Calcular fluxo de caixa
+        fluxo_caixa = calcular_fluxo_caixa_por_projeto(
+            resultados_estagio2['atribuicoes'],
+            meses,
+            meses_ferias_idx,
+            parametros.remuneracao_instrutor
+        )
+
         print("\n" + "=" * 80 + "\nGERANDO VISUALIZAÇÕES E RELATÓRIOS\n" + "=" * 80)
 
         df_consolidada_instrutor = spreadsheets.gerar_planilha_consolidada_instrutor(resultados_estagio2['atribuicoes'])
         spreadsheets.gerar_planilha_detalhada(resultados_estagio2['atribuicoes'], meses, meses_ferias_idx)
+        df_fluxo_caixa = spreadsheets.gerar_planilha_fluxo_caixa(fluxo_caixa, meses)
 
         graficos = {
             'projeto_mes': plotting.gerar_grafico_turmas_projeto_mes(resultados_estagio2['turmas'], meses,
@@ -71,6 +81,7 @@ def main():
             'instrutor_projeto': plotting.gerar_grafico_turmas_instrutor_tipologia_projeto(
                 resultados_estagio2['atribuicoes']),
             'carga_instrutor': plotting.gerar_grafico_carga_por_instrutor(resultados_estagio2['atribuicoes']),
+            'fluxo_caixa': plotting.gerar_grafico_fluxo_caixa(fluxo_caixa, meses)
         }
         graficos['prog_rob'], serie_temporal_df = plotting.gerar_grafico_demanda_prog_rob(resultados_estagio2['turmas'],
                                                                                           meses, meses_ferias_idx)
@@ -83,14 +94,15 @@ def main():
             serie_temporal_df,
             df_consolidada_instrutor,
             contagem_instrutores_hab,
-            distribuicao_por_projeto
+            distribuicao_por_projeto,
+            df_fluxo_caixa
         )
 
         for path in graficos.values():
             if path and os.path.exists(path): os.remove(path)
 
         print("\n" + "=" * 80 + "\nPROCESSO CONCLUÍDO COM SUCESSO!\n" + "=" * 80)
-        print("Arquivos gerados: Relatorio_Otimizacao_Completo.pdf, e planilhas .xlsx")
+        print("Arquivos gerados: Relatorio_Otimizacao_Custo.pdf e planilhas .xlsx")
 
     except KeyboardInterrupt:
         print("\n\n[!] Operação cancelada pelo usuário.")

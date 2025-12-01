@@ -1,4 +1,4 @@
-# ARQUIVO: otimizador/reporting/pdf_generator.py (CORREÇÃO FINAL)
+# ARQUIVO: otimizador/reporting/pdf_generator.py
 
 import os
 from pathlib import Path
@@ -99,7 +99,8 @@ def gerar_relatorio_pdf(projetos_config: List[ConfiguracaoProjeto],
                         serie_temporal_df: pd.DataFrame,
                         df_consolidada_instrutor: pd.DataFrame,
                         contagem_instrutores_hab: Dict[str, int],
-                        distribuicao_por_projeto: Dict[str, Dict[str, int]]):
+                        distribuicao_por_projeto: Dict[str, Dict[str, int]],
+                        df_fluxo_caixa: pd.DataFrame):
     """Gera o relatório executivo final em PDF."""
     print("\n--- Gerando Relatório Executivo PDF ---")
     pdf = PDF('P', 'mm', 'A4')
@@ -110,13 +111,18 @@ def gerar_relatorio_pdf(projetos_config: List[ConfiguracaoProjeto],
     # 1. SUMÁRIO EXECUTIVO
     pdf.chapter_title('1. Sumário Executivo (Principais Resultados)')
 
+    custo_total = resultados_estagio2.get('custo_total_previsto', 0)
+    pdf.metric_box("Custo Total Previsto",
+                   f"R$ {custo_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'),
+                   "Custo total com remuneração de instrutores para executar todo o plano de alocação.")
+
     total_instrutores = resultados_estagio2.get('total_instrutores_flex', 'N/A')
     spread = resultados_estagio2.get('spread_carga', 'N/A')
     pico_prog = resultados_estagio1.get('pico_prog', 'N/A')
     pico_rob = resultados_estagio1.get('pico_rob', 'N/A')
 
-    pdf.metric_box("Total de Instrutores Necessários", str(total_instrutores),
-                   "Número total de profissionais a serem alocados para cobrir a demanda.")
+    pdf.metric_box("Total de Instrutores (Únicos)", str(total_instrutores),
+                   "Número total de profissionais únicos que serão alocados em algum momento do plano.")
 
     count_prog = contagem_instrutores_hab.get('PROG', 0)
     count_rob = contagem_instrutores_hab.get('ROBOTICA', 0)
@@ -128,20 +134,23 @@ def gerar_relatorio_pdf(projetos_config: List[ConfiguracaoProjeto],
     pdf.ln(5)
 
     pdf.metric_box("Pico de Demanda (Programação)", f"{pico_prog} Turmas/Mês",
-                   "Gargalo da operação: número máximo de instrutores de PROG necessários em um único mês.")
+                   "Gargalo da operação: número máximo de turmas de PROG ativas em um único mês.")
     pdf.metric_box("Pico de Demanda (Robótica)", f"{pico_rob} Turmas/Mês",
-                   "Gargalo da operação: número máximo de instrutores de ROB necessários em um único mês.")
+                   "Gargalo da operação: número máximo de turmas de ROB ativas em um único mês.")
 
     pdf.metric_box("Balanceamento de Carga (Spread)", str(spread),
-                   "Diferença entre o instrutor mais e menos sobrecarregado. Um valor baixo indica boa distribuição do trabalho.")
+                   "Diferença entre o instrutor mais e menos sobrecarregado (em nº de turmas).")
 
     # 2. PREMISSAS GLOBAIS
     pdf.chapter_title('2. Premissas Globais e Parâmetros da Otimização')
     params = resultados_estagio1.get('parametros')
     premissas_body = (
-        f"{bullet} Capacidade Máxima por Instrutor: {params.capacidade_max_instrutor} turmas/mês\n"
-        f"{bullet} Spread Máximo Configurado: {params.spread_maximo} turmas\n"
-        f"{bullet} Meses de Férias: {', '.join(params.meses_ferias)}"
+            f"{bullet} Remuneração Mensal por Instrutor: R$ {params.remuneracao_instrutor:,.2f}\n".replace(',',
+                                                                                                           'X').replace(
+                '.', ',').replace('X', '.') +
+            f"{bullet} Capacidade Máxima por Instrutor: {params.capacidade_max_instrutor} turmas/mês\n"
+            f"{bullet} Spread Máximo Configurado: {params.spread_maximo} turmas\n"
+            f"{bullet} Meses de Férias: {', '.join(params.meses_ferias)}"
     )
     pdf.chapter_body(premissas_body)
 
@@ -152,27 +161,19 @@ def gerar_relatorio_pdf(projetos_config: List[ConfiguracaoProjeto],
         pdf.cell(0, 6, f"  {bullet} Projeto: {proj.nome}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font(pdf.font_family, '', 10)
 
-        # &lt;&lt;&lt; CORREÇÃO APLICADA: CONSTRUIR UMA ÚNICA STRING E FAZER UMA SÓ CHAMADA &lt;&lt;&lt;
-
-        # Inicia a string com os detalhes do projeto
         project_details_body = (
             f"    - Período: {proj.data_inicio} a {proj.data_termino}\n"
             f"    - Turmas: {proj.num_turmas} | Duração: {proj.duracao_curso} meses | Ondas: {proj.ondas}\n"
             f"    - Proporção Alvo: {proj.percentual_prog:.1f}% PROG / {proj.percentual_rob:.1f}% ROB"
         )
-
-        # Busca a distribuição de instrutores para este projeto
         distribuicao = distribuicao_por_projeto.get(proj.nome, {'PROG': 0, 'ROBOTICA': 0})
         total_alocado = distribuicao['PROG'] + distribuicao['ROBOTICA']
 
-        # Se houver instrutores alocados, adiciona a linha de alocação à string
         if total_alocado > 0:
             alocacao_str = f"\n    - Alocação Resultante: {distribuicao['PROG']} PROG / {distribuicao['ROBOTICA']} ROB ({total_alocado} no total)"
             project_details_body += alocacao_str
 
-        # Faz uma única chamada multi_cell com a string completa
         pdf.multi_cell(0, 5, project_details_body)
-
         pdf.ln(2)
 
     # 4. ANÁLISE GRÁFICA
@@ -183,12 +184,15 @@ def gerar_relatorio_pdf(projetos_config: List[ConfiguracaoProjeto],
     pdf.add_image_section("4.3. Demanda Consolidada por Projeto ao Longo do Tempo", graficos_paths.get('projeto_mes'))
     pdf.add_image_section("4.4. Alocação Detalhada de Turmas por Instrutor e Projeto",
                           graficos_paths.get('instrutor_projeto'))
+    pdf.add_image_section("4.5. Fluxo de Caixa Mensal por Projeto",
+                          graficos_paths.get('fluxo_caixa'))
 
     # 5. APÊNDICE
     pdf.add_table_from_dataframe(serie_temporal_df, title="Apêndice A: Série Temporal da Demanda Mensal")
     pdf.add_table_from_dataframe(df_consolidada_instrutor, title="Apêndice B: Tabela Consolidada - Instrutor x Projeto")
+    pdf.add_table_from_dataframe(df_fluxo_caixa, title="Apêndice C: Fluxo de Caixa Mensal por Projeto")
 
-    pdf_filename = 'Relatorio_Otimizacao_Completo.pdf'
+    pdf_filename = 'Relatorio_Otimizacao_Custo.pdf'
     pdf.output(pdf_filename)
-    print(f"\n[✓] Relatório Executivo PDF gerado com sucesso: {pdf_filename}")
+    print(f"\n[✓] Relatório Executivo de Custo gerado com sucesso: {pdf_filename}")
     return pdf_filename

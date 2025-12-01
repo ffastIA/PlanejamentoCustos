@@ -1,4 +1,4 @@
-# ARQUIVO: otimizador/io/user_input.py
+# ARQUIVO: otimizador/io/user_input.py (VERSÃO FINAL CORRIGIDA)
 
 import sys
 from datetime import datetime
@@ -22,10 +22,13 @@ def obter_parametros_usuario() -> ParametrosOtimizacao:
             prompt="Capacidade máxima de turmas por instrutor/mês [padrão: 8]: ",
             valor_padrao=8, minimo=1, maximo=20, nome_parametro="Capacidade"
         )
-        # <<< ALTERAÇÃO: Removida a pergunta sobre o percentual global >>>
         spread_maximo = _obter_int_usuario(
             prompt="Spread máximo permitido entre instrutores [padrão: 16]: ",
             valor_padrao=16, minimo=0, maximo=50, nome_parametro="Spread Máximo"
+        )
+        remuneracao = _obter_float_usuario(
+            prompt="Remuneração mensal por instrutor (R$) [padrão: 5000.00]: ",
+            valor_padrao=5000.0, minimo=1.0, maximo=100000.0, nome_parametro="Remuneração"
         )
         timeout = _obter_int_usuario(
             prompt="Timeout do solver em segundos [padrão: 180]: ",
@@ -34,7 +37,8 @@ def obter_parametros_usuario() -> ParametrosOtimizacao:
         parametros = ParametrosOtimizacao(
             capacidade_max_instrutor=capacidade_max,
             spread_maximo=spread_maximo,
-            timeout_segundos=timeout
+            timeout_segundos=timeout,
+            remuneracao_instrutor=remuneracao
         )
         exibir_resumo_parametros(parametros)
         return parametros
@@ -140,8 +144,6 @@ def _configurar_projeto_interativo(projeto_existente: Optional[ConfiguracaoProje
             projeto_existente.duracao_curso if is_editing else None, 1, 12, "Duração")
         ondas = _obter_int_usuario(f"Número de ondas [{projeto_existente.ondas if is_editing else ''}]: ",
                                    projeto_existente.ondas if is_editing else 1, 1, 10, "Ondas")
-
-        # <<< ALTERAÇÃO: Adicionada a pergunta sobre o percentual do projeto >>>
         perc_prog = _obter_float_usuario(
             f"Percentual PROG (%) [{projeto_existente.percentual_prog if is_editing else 60}]: ",
             projeto_existente.percentual_prog if is_editing else 60.0, 0.0, 100.0, "Percentual PROG")
@@ -166,6 +168,7 @@ def _editar_projeto_interativo(projetos: List[ConfiguracaoProjeto]) -> List[Conf
     if escolha.upper() == 'C': return projetos
     try:
         idx = int(escolha) - 1
+        # &lt;&lt;&lt; CORREÇÃO APLICADA AQUI
         if not (0 <= idx < len(projetos)):
             print("[!] Número inválido.")
             return projetos
@@ -181,7 +184,6 @@ def _editar_projeto_interativo(projetos: List[ConfiguracaoProjeto]) -> List[Conf
 
 def _remover_projeto_interativo(projetos: List[ConfiguracaoProjeto]) -> List[ConfiguracaoProjeto]:
     """Interface para selecionar e remover um projeto."""
-    # (Implementação omitida por brevidade, mas a lógica seria similar à de edição)
     print("[INFO] Remoção ainda não implementada na versão refatorada.")
     return projetos
 
@@ -195,7 +197,6 @@ def _confirmar_configuracao(projetos: List[ConfiguracaoProjeto]) -> bool:
 def _obter_projetos_padrao() -> List[ConfiguracaoProjeto]:
     """Retorna configuração padrão dos projetos."""
     try:
-        # <<< ALTERAÇÃO: Adicionando o percentual específico em cada projeto padrão >>>
         return [
             ConfiguracaoProjeto(nome='DD1', data_inicio='15/01/2026', data_termino='31/03/2026', num_turmas=8,
                                 duracao_curso=2, ondas=1, percentual_prog=100.0),
@@ -209,8 +210,7 @@ def _obter_projetos_padrao() -> List[ConfiguracaoProjeto]:
         sys.exit(1)
 
 
-def _obter_int_usuario(prompt: str, valor_padrao: Optional[int], minimo: int, maximo: int, nome_parametro: str) -> \
-Optional[int]:
+def _obter_int_usuario(prompt: str, valor_padrao: Optional[int], minimo: int, maximo: int, nome_parametro: str) -> Optional[int]:
     """Solicita entrada inteira do usuário com validação."""
     while True:
         entrada = input(prompt).strip()
@@ -218,7 +218,9 @@ Optional[int]:
         if entrada == "" and valor_padrao is not None: return valor_padrao
         try:
             valor = int(entrada)
-            if minimo <= valor <= maximo: return valor
+            # &lt;&lt;&lt; CORREÇÃO APLICADA AQUI
+            if minimo <= valor <= maximo:
+                return valor
             print(f"[!] {nome_parametro} deve estar entre {minimo} e {maximo}.")
         except (ValueError, TypeError):
             print(f"[!] Valor inválido. Digite um número inteiro.")
@@ -232,7 +234,9 @@ def _obter_float_usuario(prompt: str, valor_padrao: float, minimo: float, maximo
         if entrada == "" and valor_padrao is not None: return valor_padrao
         try:
             valor = float(entrada.replace(',', '.'))
-            if minimo <= valor <= maximo: return valor
+            # &lt;&lt;&lt; CORREÇÃO APLICADA AQUI
+            if minimo <= valor <= maximo:
+                return valor
             print(f"[!] {nome_parametro} deve estar entre {minimo} e {maximo}.")
         except (ValueError, TypeError):
             print("[!] Valor inválido. Digite um número.")
@@ -242,7 +246,7 @@ def exibir_resumo_parametros(params: ParametrosOtimizacao):
     """Exibe resumo dos parâmetros configurados."""
     print("\n" + "=" * 80 + "\nPARÂMETROS GLOBAIS CONFIGURADOS:\n" + "=" * 80)
     print(f"  • Capacidade máxima por instrutor: {params.capacidade_max_instrutor} turmas/mês")
-    # <<< ALTERAÇÃO: Removido o percentual global >>>
+    print(f"  • Remuneração Mensal por Instrutor: R$ {params.remuneracao_instrutor:,.2f}".replace(',', 'X').replace('.',',').replace('X','.'))
     print(f"  • Spread Máximo: {params.spread_maximo} turmas")
     print(f"  • Timeout do Solver: {params.timeout_segundos} segundos")
     print(f"  • Meses de Férias: {', '.join(params.meses_ferias)}")
@@ -253,7 +257,6 @@ def exibir_resumo_projetos(projetos: List[ConfiguracaoProjeto]):
     """Exibe resumo dos projetos configurados."""
     print("\n" + "=" * 80 + "\nPROJETOS CONFIGURADOS:\n" + "=" * 80)
     for proj in projetos:
-        # <<< ALTERAÇÃO: Exibindo o percentual no resumo do projeto >>>
         print(f"\n  {proj.nome}:\n"
               f"    - Período: {proj.data_inicio} a {proj.data_termino}\n"
               f"    - Turmas: {proj.num_turmas} | Duração: {proj.duracao_curso} meses | Ondas: {proj.ondas}\n"
