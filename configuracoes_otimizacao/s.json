@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "nome": "s",
+    "data_criacao": "2025-11-20T14:12:53.629661",
+    "versao": "2.0"
+  },
+  "parametros": {
+    "capacidade_max_instrutor": 6,
+    "percentual_prog": 60.0,
+    "spread_maximo": 16,
+    "meses_ferias": [
+      "Jul/26",
+      "Dez/26"
+    ],
+    "timeout_segundos": 180
+  },
+  "projetos": [
+    {
+      "nome": "DD1",
+      "data_inicio": "15/01/2026",
+      "data_termino": "31/03/2026",
+      "num_turmas": 8,
+      "duracao_curso": 2,
+      "ondas": 1,
+      "turmas_min_por_mes": 1
+    },
+    {
+      "nome": "DD2",
+      "data_inicio": "01/04/2026",
+      "data_termino": "31/03/2027",
+      "num_turmas": 110,
+      "duracao_curso": 4,
+      "ondas": 2,
+      "turmas_min_por_mes": 1
+    },
+    {
+      "nome": "IdearTec",
+      "data_inicio": "01/04/2026",
+      "data_termino": "31/03/2027",
+      "num_turmas": 110,
+      "duracao_curso": 4,
+      "ondas": 2,
+      "turmas_min_por_mes": 1
+    }
+  ]
+}
